@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-Wall -Werror -Wextra -std=c11 -pedantic -Wno-format
-SRC=s21_string_functions/*.c
+CFLAGS=-Wall -Werror -Wextra -std=c11 -pedantic -Wno-format -std=c11
+SRC=code/*.c
 OBJ=$(SRC:.c=.o)
 TSRC=tests/*.c
 TOBJ=$(TSRC:.c=.o)
