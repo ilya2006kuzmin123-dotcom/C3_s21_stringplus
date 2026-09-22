@@ -9,14 +9,34 @@ char* s21_strtok(char* str, const char* delim) {
   }
 
   if (olds != S21_NULL && *olds != '\0') {
-    olds += s21_strspn(olds, delim);
+    while (*olds != '\0') {
+      int is_delim = 0;
+      for (int i = 0; delim[i] != '\0'; i++) {
+        if (*olds == delim[i]) {
+          is_delim = 1;
+          break;
+        }
+      }
+      if (!is_delim) break;
+      olds++;
+    }
 
     if (*olds != '\0') {
       token = olds;
-      olds = s21_strpbrk(token, delim);
 
-      if (olds != S21_NULL) {
-        *olds = '\0';
+      while (*olds != '\0') {
+        int is_delim = 0;
+        for (int i = 0; delim[i] != '\0'; i++) {
+          if (*olds == delim[i]) {
+            is_delim = 1;
+            break;
+          }
+        }
+        if (is_delim) {
+          *olds = '\0';
+          olds++;
+          return token;
+        }
         olds++;
       }
     }
