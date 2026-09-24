@@ -1,6 +1,7 @@
 #ifndef S21_STRING_H
 #define S21_STRING_H
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -26,5 +27,6 @@ char* s21_strtok(char* str, const char* delim);
 void* s21_to_lower(const char* str);
 void* s21_to_upper(const char* str);
 void* s21_trim(const char* src, const char* trim_chars);
+int s21_sprintf(char* str, const char* format, ...);
 
 #endif

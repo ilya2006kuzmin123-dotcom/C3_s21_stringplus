@@ -42,7 +42,7 @@ check_style:
 	clang-format -n --style="Google" code/*.c tests/*.c *.h
 
 fix_style:
-	clang-format -i --style="Google" code/*.c tests/*.c *.h
+	clang-format -i --style="Google" code/*.c code/*.h tests/*.c *.h
 
 gcov_report:
 	$(CC) $(CFLAGS) --coverage $(SRC) $(TSRC) $(LIBS) -o s21_tests
