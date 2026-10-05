@@ -33,6 +33,15 @@ int s21_parse_int(char* str, s21_sprintf_token token, va_list* args,
 int s21_parse_unsigned(char* str, s21_sprintf_token token, va_list* args,
                        int current_len);
 int s21_parse_float(char* str, s21_sprintf_token token, va_list* args,
+                    int current_len, int is_g);
+int s21_parse_hex(char* str, s21_sprintf_token token, va_list* args,
+                  int current_len);
+int s21_parse_octal(char* str, s21_sprintf_token token, va_list* args,
                     int current_len);
-
+int s21_parse_pointer(char* str, s21_sprintf_token token, va_list* args,
+                      int current_len);
+int s21_parse_exponent(char* str, s21_sprintf_token token, va_list* args,
+                       int current_len, int is_g);
+int s21_parse_g(char* str, s21_sprintf_token token, va_list* args,
+                int current_len);
 #endif
