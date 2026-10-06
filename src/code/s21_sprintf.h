@@ -44,4 +44,11 @@ int s21_parse_exponent(char* str, s21_sprintf_token token, va_list* args,
                        int current_len, int is_g);
 int s21_parse_g(char* str, s21_sprintf_token token, va_list* args,
                 int current_len);
+int s21_apply_width(char* str, const char* tmp, int tmp_len, char sign,
+                    s21_sprintf_token token, int current_len);
+void s21_reverse(char* tmp, int tmp_len);
+void s21_assemble_mantissa(char* tmp, int* tmp_len, long double val, int prec,
+                           int is_g, s21_sprintf_token token);
+const char* s21_parse_atoi(const char* f, int* res);
+int s21_get_exp(long double val);
 #endif

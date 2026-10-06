@@ -15,15 +15,24 @@ s21_sprintf_token s21_init_token(void) {
   return token;
 }
 
+const char* s21_parse_atoi(const char* f, int* res) {
+  *res = 0;
+  while (*f >= '0' && *f <= '9') {
+    *res = *res * 10 + (*f - '0');
+    f++;
+  }
+  return f;
+}
+
 const char* s21_parse_token(const char* format, s21_sprintf_token* token,
                             va_list* args) {
   const char* f = format;
   while (*f == '-' || *f == '+' || *f == ' ' || *f == '#' || *f == '0') {
-    if (*f == '-') token->minus = 1;
-    if (*f == '+') token->plus = 1;
-    if (*f == ' ') token->space = 1;
-    if (*f == '#') token->hash = 1;
-    if (*f == '0') token->zero = 1;
+    token->minus = (*f == '-') ? 1 : token->minus;
+    token->plus = (*f == '+') ? 1 : token->plus;
+    token->space = (*f == ' ') ? 1 : token->space;
+    token->hash = (*f == '#') ? 1 : token->hash;
+    token->zero = (*f == '0') ? 1 : token->zero;
     f++;
   }
   if (*f == '*') {
@@ -34,15 +43,10 @@ const char* s21_parse_token(const char* format, s21_sprintf_token* token,
     }
     f++;
   } else if (*f >= '0' && *f <= '9') {
-    token->width = 0;
-    while (*f >= '0' && *f <= '9') {
-      token->width = token->width * 10 + (*f - '0');
-      f++;
-    }
+    f = s21_parse_atoi(f, &token->width);
   }
   if (*f == '.') {
     token->has_precision = 1;
-    token->precision = 0;
     f++;
     if (*f == '*') {
       token->precision = va_arg(*args, int);
@@ -51,19 +55,92 @@ const char* s21_parse_token(const char* format, s21_sprintf_token* token,
         token->has_precision = 0;
       }
       f++;
-    } else if (*f >= '0' && *f <= '9') {
-      while (*f >= '0' && *f <= '9') {
-        token->precision = token->precision * 10 + (*f - '0');
-        f++;
-      }
+    } else {
+      f = s21_parse_atoi(f, &token->precision);
     }
   }
-  if (*f == 'h' || *f == 'l' || *f == 'L') {
-    token->length = *f;
-    f++;
-  }
+  if (*f == 'h' || *f == 'l' || *f == 'L') token->length = *f++;
   token->specifier = *f;
   return f;
+}
+
+int s21_apply_width(char* str, const char* tmp, int tmp_len, char sign,
+                    s21_sprintf_token token, int current_len) {
+  int wr = 0, total = tmp_len + (sign != 0 ? 1 : 0);
+  int pad = (token.width > total) ? (token.width - total) : 0;
+  char p_ch = (token.zero && !token.minus && !token.has_precision) ? '0' : ' ';
+  if (token.specifier == 'f' || token.specifier == 'e' ||
+      token.specifier == 'E') {
+    if (token.zero && !token.minus) p_ch = '0';
+  }
+  if (token.minus) {
+    if (sign) str[current_len + wr++] = sign;
+    for (int i = 0; i < tmp_len; i++) str[current_len + wr++] = tmp[i];
+    for (int i = 0; i < pad; i++) str[current_len + wr++] = ' ';
+  } else if (p_ch == '0') {
+    if (sign) str[current_len + wr++] = sign;
+    int start_idx = 0;
+    if (tmp_len >= 2 && tmp[0] == '0' && (tmp[1] == 'x' || tmp[1] == 'X')) {
+      str[current_len + wr++] = tmp[0];
+      str[current_len + wr++] = tmp[1];
+      start_idx = 2;
+    } else if (tmp_len >= 1 && tmp[0] == '0' && token.specifier == 'o') {
+      str[current_len + wr++] = tmp[0];
+      start_idx = 1;
+    }
+    for (int i = 0; i < pad; i++) str[current_len + wr++] = '0';
+    for (int i = start_idx; i < tmp_len; i++) str[current_len + wr++] = tmp[i];
+  } else {
+    for (int i = 0; i < pad; i++) str[current_len + wr++] = ' ';
+    if (sign) str[current_len + wr++] = sign;
+    for (int i = 0; i < tmp_len; i++) str[current_len + wr++] = tmp[i];
+  }
+  return wr;
+}
+
+void s21_reverse(char* tmp, int tmp_len) {
+  int start = 0, end = tmp_len - 1;
+  while (start < end) {
+    char ch = tmp[start];
+    tmp[start] = tmp[end];
+    tmp[end] = ch;
+    start++;
+    end--;
+  }
+}
+
+void s21_assemble_mantissa(char* tmp, int* tmp_len, long double val, int prec,
+                           int is_g, s21_sprintf_token token) {
+  long long int_part = (long long)val;
+  long double frac_part = val - (long double)int_part;
+
+  if (int_part == 0) tmp[(*tmp_len)++] = '0';
+  while (int_part > 0) {
+    tmp[(*tmp_len)++] = (int_part % 10) + '0';
+    int_part /= 10;
+  }
+  s21_reverse(tmp, *tmp_len);
+
+  if (prec > 0 || token.hash) tmp[(*tmp_len)++] = '.';
+  for (int i = 0; i < prec; i++) {
+    frac_part *= 10.0;
+    int digit = (int)frac_part;
+    tmp[(*tmp_len)++] = digit + '0';
+    frac_part -= (long double)digit;
+  }
+
+  if (is_g && !token.hash && *tmp_len > 0) {
+    int has_dot = 0;
+    for (int i = 0; i < *tmp_len; i++) {
+      if (tmp[i] == '.') has_dot = 1;
+    }
+    while (has_dot && *tmp_len > 0 && tmp[*tmp_len - 1] == '0') {
+      tmp[--(*tmp_len)] = '\0';
+    }
+    if (has_dot && *tmp_len > 0 && tmp[*tmp_len - 1] == '.') {
+      tmp[--(*tmp_len)] = '\0';
+    }
+  }
 }
 
 int s21_parse_char(char* str, s21_sprintf_token token, va_list* args,
@@ -90,46 +167,25 @@ int s21_parse_char(char* str, s21_sprintf_token token, va_list* args,
 
 int s21_parse_string(char* str, s21_sprintf_token token, va_list* args,
                      int current_len) {
-  int written = 0;
   char* s = va_arg(*args, char*);
+  char tmp[4096] = {0};
+  int s_len = 0;
   if (s == S21_NULL) s = "(null)";
-  int s_len = (int)s21_strlen(s);
+  s_len = (int)s21_strlen(s);
   if (token.has_precision && token.precision >= 0 && token.precision < s_len) {
     s_len = token.precision;
   }
-  int padding = (token.width > s_len) ? token.width - s_len : 0;
-  if (!token.minus) {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  }
-  for (int i = 0; i < s_len; i++) {
-    str[current_len + written] = s[i];
-    written++;
-  }
-  if (token.minus) {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  }
-  return written;
+  for (int i = 0; i < s_len; i++) tmp[i] = s[i];
+  return s21_apply_width(str, tmp, s_len, 0, token, current_len);
 }
 
 int s21_parse_int(char* str, s21_sprintf_token token, va_list* args,
                   int current_len) {
-  int written = 0;
-  long val = 0;
-  if (token.length == 'l')
-    val = va_arg(*args, long);
-  else if (token.length == 'h')
-    val = (short)va_arg(*args, int);
-  else
-    val = va_arg(*args, int);
+  long val = (token.length == 'l')   ? va_arg(*args, long)
+             : (token.length == 'h') ? (short)va_arg(*args, int)
+                                     : va_arg(*args, int);
   char tmp[128] = {0};
-  int tmp_len = 0;
-  int is_zero = (val == 0);
+  int tmp_len = 0, is_zero = (val == 0);
   unsigned long uval = (val < 0) ? (unsigned long)(-val) : (unsigned long)val;
   if (!(is_zero && token.has_precision && token.precision == 0)) {
     if (uval == 0) tmp[tmp_len++] = '0';
@@ -137,15 +193,7 @@ int s21_parse_int(char* str, s21_sprintf_token token, va_list* args,
       tmp[tmp_len++] = (uval % 10) + '0';
       uval /= 10;
     }
-    int start = 0;
-    int end = tmp_len - 1;
-    while (start < end) {
-      char tmp_char = tmp[start];
-      tmp[start] = tmp[end];
-      tmp[end] = tmp_char;
-      start++;
-      end--;
-    }
+    s21_reverse(tmp, tmp_len);
   }
   if (token.has_precision && token.precision > tmp_len) {
     int zeros_to_add = token.precision - tmp_len;
@@ -153,88 +201,25 @@ int s21_parse_int(char* str, s21_sprintf_token token, va_list* args,
     for (int i = 0; i < zeros_to_add; i++) tmp[i] = '0';
     tmp_len = token.precision;
   }
-  char sign = 0;
-  if (val < 0)
-    sign = '-';
-  else if (token.plus)
-    sign = '+';
-  else if (token.space)
-    sign = ' ';
-  int total_len = tmp_len + (sign != 0 ? 1 : 0);
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus && !token.has_precision) pad_char = '0';
-  if (token.minus) {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  char sign = (val < 0) ? '-' : (token.plus) ? '+' : (token.space) ? ' ' : 0;
+  return s21_apply_width(str, tmp, tmp_len, sign, token, current_len);
 }
 
 int s21_parse_unsigned(char* str, s21_sprintf_token token, va_list* args,
                        int current_len) {
-  int written = 0;
-  unsigned long val = 0;
-  if (token.length == 'l')
-    val = va_arg(*args, unsigned long);
-  else if (token.length == 'h')
-    val = (unsigned short)va_arg(*args, unsigned int);
-  else
-    val = va_arg(*args, unsigned int);
+  unsigned long val = (token.length == 'l') ? va_arg(*args, unsigned long)
+                      : (token.length == 'h')
+                          ? (unsigned short)va_arg(*args, unsigned int)
+                          : va_arg(*args, unsigned int);
   char tmp[128] = {0};
-  int tmp_len = 0;
-  int is_zero = (val == 0);
+  int tmp_len = 0, is_zero = (val == 0);
   if (!(is_zero && token.has_precision && token.precision == 0)) {
     if (val == 0) tmp[tmp_len++] = '0';
     while (val > 0) {
       tmp[tmp_len++] = (val % 10) + '0';
       val /= 10;
     }
-    int start = 0;
-    int end = tmp_len - 1;
-    while (start < end) {
-      char tmp_char = tmp[start];
-      tmp[start] = tmp[end];
-      tmp[end] = tmp_char;
-      start++;
-      end--;
-    }
+    s21_reverse(tmp, tmp_len);
   }
   if (token.has_precision && token.precision > tmp_len) {
     int zeros_to_add = token.precision - tmp_len;
@@ -242,40 +227,14 @@ int s21_parse_unsigned(char* str, s21_sprintf_token token, va_list* args,
     for (int i = 0; i < zeros_to_add; i++) tmp[i] = '0';
     tmp_len = token.precision;
   }
-  int total_len = tmp_len;
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus && !token.has_precision) pad_char = '0';
-  if (token.minus) {
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = pad_char;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  return s21_apply_width(str, tmp, tmp_len, 0, token, current_len);
 }
 
 int s21_parse_float(char* str, s21_sprintf_token token, va_list* args,
                     int current_len, int is_g) {
-  int written = 0;
-  long double val = 0;
-  if (token.length == 'L')
-    val = va_arg(*args, long double);
-  else
-    val = va_arg(*args, double);
+  int written = 0, tmp_len = 0;
+  long double val = (token.length == 'L') ? va_arg(*args, long double)
+                                          : va_arg(*args, double);
   int prec = (token.has_precision) ? token.precision : 6;
   int negative = !!signbit(val);
   if (negative) val = -val;
@@ -287,22 +246,12 @@ int s21_parse_float(char* str, s21_sprintf_token token, va_list* args,
   long long int_part = (long long)val;
   long double frac_part = val - (long double)int_part;
   char tmp[256] = {0};
-  int tmp_len = 0;
-  int start_int_idx = tmp_len;
   if (int_part == 0) tmp[tmp_len++] = '0';
   while (int_part > 0) {
     tmp[tmp_len++] = (int_part % 10) + '0';
     int_part /= 10;
   }
-  int start = start_int_idx;
-  int end = tmp_len - 1;
-  while (start < end) {
-    char temp_char = tmp[start];
-    tmp[start] = tmp[end];
-    tmp[end] = temp_char;
-    start++;
-    end--;
-  }
+  s21_reverse(tmp, tmp_len);
   if (prec > 0 || token.hash) tmp[tmp_len++] = '.';
   for (int i = 0; i < prec; i++) {
     frac_part *= 10.0;
@@ -312,87 +261,25 @@ int s21_parse_float(char* str, s21_sprintf_token token, va_list* args,
   }
   if (is_g && !token.hash && tmp_len > 0) {
     int has_dot = 0;
-    for (int i = 0; i < tmp_len; i++) {
+    for (int i = 0; i < tmp_len; i++)
       if (tmp[i] == '.') has_dot = 1;
-    }
-    if (has_dot) {
-      while (tmp_len > 0 && tmp[tmp_len - 1] == '0') {
-        tmp[tmp_len - 1] = '\0';
-        tmp_len--;
-      }
-      if (tmp_len > 0 && tmp[tmp_len - 1] == '.') {
-        tmp[tmp_len - 1] = '\0';
-        tmp_len--;
-      }
-    }
+    while (has_dot && tmp_len > 0 && tmp[tmp_len - 1] == '0')
+      tmp[--tmp_len] = '\0';
+    if (has_dot && tmp_len > 0 && tmp[tmp_len - 1] == '.')
+      tmp[--tmp_len] = '\0';
   }
-  char sign = 0;
-  if (negative)
-    sign = '-';
-  else if (token.plus)
-    sign = '+';
-  else if (token.space)
-    sign = ' ';
-  int total_len = tmp_len + (sign != 0 ? 1 : 0);
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus) pad_char = '0';
-  if (token.minus) {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  char sign = (negative) ? '-' : (token.plus) ? '+' : (token.space) ? ' ' : 0;
+  return s21_apply_width(str, tmp, tmp_len, sign, token, current_len);
 }
 
 int s21_parse_hex(char* str, s21_sprintf_token token, va_list* args,
                   int current_len) {
-  int written = 0;
-  unsigned long val = 0;
-  if (token.length == 'l')
-    val = va_arg(*args, unsigned long);
-  else if (token.length == 'h')
-    val = (unsigned short)va_arg(*args, unsigned int);
-  else
-    val = va_arg(*args, unsigned int);
+  unsigned long val = (token.length == 'l') ? va_arg(*args, unsigned long)
+                      : (token.length == 'h')
+                          ? (unsigned short)va_arg(*args, unsigned int)
+                          : va_arg(*args, unsigned int);
   char tmp[128] = {0};
-  int tmp_len = 0;
-  int is_zero = (val == 0);
+  int tmp_len = 0, is_zero = (val == 0);
   if (!(is_zero && token.has_precision && token.precision == 0)) {
     if (val == 0) tmp[tmp_len++] = '0';
     while (val > 0) {
@@ -405,15 +292,7 @@ int s21_parse_hex(char* str, s21_sprintf_token token, va_list* args,
       }
       val /= 16;
     }
-    int start = 0;
-    int end = tmp_len - 1;
-    while (start < end) {
-      char tmp_char = tmp[start];
-      tmp[start] = tmp[end];
-      tmp[end] = tmp_char;
-      start++;
-      end--;
-    }
+    s21_reverse(tmp, tmp_len);
   }
   if (token.has_precision && token.precision > tmp_len) {
     int zeros_to_add = token.precision - tmp_len;
@@ -421,80 +300,23 @@ int s21_parse_hex(char* str, s21_sprintf_token token, va_list* args,
     for (int i = 0; i < zeros_to_add; i++) tmp[i] = '0';
     tmp_len = token.precision;
   }
-  char prefix[3] = {0};
-  int prefix_len = 0;
   if (token.hash && !is_zero) {
-    prefix[0] = '0';
-    prefix[1] = (token.specifier == 'X') ? 'X' : 'x';
-    prefix[2] = '\0';
-    prefix_len = 2;
+    for (int i = tmp_len - 1; i >= 0; i--) tmp[i + 2] = tmp[i];
+    tmp[0] = '0';
+    tmp[1] = (token.specifier == 'X') ? 'X' : 'x';
+    tmp_len += 2;
   }
-  int total_len = tmp_len + prefix_len;
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus && !token.has_precision) pad_char = '0';
-  if (token.minus) {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  return s21_apply_width(str, tmp, tmp_len, 0, token, current_len);
 }
 
 int s21_parse_octal(char* str, s21_sprintf_token token, va_list* args,
                     int current_len) {
-  int written = 0;
-  unsigned long val = 0;
-  if (token.length == 'l')
-    val = va_arg(*args, unsigned long);
-  else if (token.length == 'h')
-    val = (unsigned short)va_arg(*args, unsigned int);
-  else
-    val = va_arg(*args, unsigned int);
+  unsigned long val = (token.length == 'l') ? va_arg(*args, unsigned long)
+                      : (token.length == 'h')
+                          ? (unsigned short)va_arg(*args, unsigned int)
+                          : va_arg(*args, unsigned int);
   char tmp[128] = {0};
-  int tmp_len = 0;
-  int is_zero = (val == 0);
+  int tmp_len = 0, is_zero = (val == 0);
   if (!(is_zero && token.has_precision && token.precision == 0)) {
     if (val == 0) tmp[tmp_len++] = '0';
     while (val > 0) {
@@ -502,15 +324,7 @@ int s21_parse_octal(char* str, s21_sprintf_token token, va_list* args,
       tmp[tmp_len++] = rem + '0';
       val /= 8;
     }
-    int start = 0;
-    int end = tmp_len - 1;
-    while (start < end) {
-      char tmp_char = tmp[start];
-      tmp[start] = tmp[end];
-      tmp[end] = tmp_char;
-      start++;
-      end--;
-    }
+    s21_reverse(tmp, tmp_len);
   }
   if (token.has_precision && token.precision > tmp_len) {
     int zeros_to_add = token.precision - tmp_len;
@@ -518,70 +332,22 @@ int s21_parse_octal(char* str, s21_sprintf_token token, va_list* args,
     for (int i = 0; i < zeros_to_add; i++) tmp[i] = '0';
     tmp_len = token.precision;
   }
-  char prefix = 0;
-  int prefix_len = 0;
   if (token.hash && (tmp_len == 0 || tmp[0] != '0')) {
-    prefix = '0';
-    prefix_len = 1;
+    for (int i = tmp_len - 1; i >= 0; i--) tmp[i + 1] = tmp[i];
+    tmp[0] = '0';
+    tmp_len += 1;
   }
-  int total_len = tmp_len + prefix_len;
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus && !token.has_precision) pad_char = '0';
-  if (token.minus) {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix;
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  return s21_apply_width(str, tmp, tmp_len, 0, token, current_len);
 }
 
 int s21_parse_pointer(char* str, s21_sprintf_token token, va_list* args,
                       int current_len) {
-  int written = 0;
+  int tmp_len = 0;
   void* ptr = va_arg(*args, void*);
   unsigned long long val = (unsigned long long)ptr;
   char tmp[128] = {0};
-  int tmp_len = 0;
   int is_zero = (val == 0);
   (void)is_zero;
-  char prefix[3] = {0};
-  int prefix_len = 0;
 #if defined(__linux__)
   if (is_zero) {
     tmp[0] = '(';
@@ -590,7 +356,6 @@ int s21_parse_pointer(char* str, s21_sprintf_token token, va_list* args,
     tmp[3] = 'l';
     tmp[4] = ')';
     tmp_len = 5;
-    prefix_len = 0;
   }
 #endif
   if (tmp_len == 0) {
@@ -598,21 +363,10 @@ int s21_parse_pointer(char* str, s21_sprintf_token token, va_list* args,
       if (val == 0) tmp[tmp_len++] = '0';
       while (val > 0) {
         int rem = val % 16;
-        if (rem < 10)
-          tmp[tmp_len++] = rem + '0';
-        else
-          tmp[tmp_len++] = (rem - 10) + 'a';
+        tmp[tmp_len++] = (rem < 10) ? rem + '0' : (rem - 10) + 'a';
         val /= 16;
       }
-      int start = 0;
-      int end = tmp_len - 1;
-      while (start < end) {
-        char tmp_char = tmp[start];
-        tmp[start] = tmp[end];
-        tmp[end] = tmp_char;
-        start++;
-        end--;
-      }
+      s21_reverse(tmp, tmp_len);
     }
     if (token.has_precision && token.precision > tmp_len) {
       int zeros_to_add = token.precision - tmp_len;
@@ -620,75 +374,22 @@ int s21_parse_pointer(char* str, s21_sprintf_token token, va_list* args,
       for (int i = 0; i < zeros_to_add; i++) tmp[i] = '0';
       tmp_len = token.precision;
     }
-    prefix[0] = '0';
-    prefix[1] = 'x';
-    prefix_len = 2;
+    for (int i = tmp_len - 1; i >= 0; i--) tmp[i + 2] = tmp[i];
+    tmp[0] = '0';
+    tmp[1] = 'x';
+    tmp_len += 2;
   }
-  int total_len = tmp_len + prefix_len;
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus && !token.has_precision) pad_char = '0';
-  if (token.minus) {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (prefix_len > 0) {
-      str[current_len + written] = prefix[0];
-      written++;
-      str[current_len + written] = prefix[1];
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  }
-  return written;
+  return s21_apply_width(str, tmp, tmp_len, 0, token, current_len);
 }
 
 int s21_parse_exponent(char* str, s21_sprintf_token token, va_list* args,
                        int current_len, int is_g) {
-  int written = 0;
-  long double val = 0;
-  if (token.length == 'L')
-    val = va_arg(*args, long double);
-  else
-    val = va_arg(*args, double);
+  int tmp_len = 0, exp = 0;
+  long double val = (token.length == 'L') ? va_arg(*args, long double)
+                                          : va_arg(*args, double);
+  int prec = (token.has_precision) ? token.precision : 6;
   int negative = signbit(val);
   if (negative) val = -val;
-  int exp = 0;
-  int prec = (token.has_precision) ? token.precision : 6;
   if (val > 0.0) {
     while (val >= 10.0) {
       val /= 10.0;
@@ -699,114 +400,39 @@ int s21_parse_exponent(char* str, s21_sprintf_token token, va_list* args,
       exp--;
     }
     if (!is_g) {
-      long double round_offset = 0.5;
-      for (int i = 0; i < prec; i++) round_offset /= 10.0;
-      val += round_offset;
+      long double offset = 0.5;
+      for (int i = 0; i < prec; i++) offset /= 10.0;
+      val += offset;
       if (val >= 10.0) {
         val /= 10.0;
         exp++;
       }
     }
   }
-  long long int_part = (long long)val;
-  long double frac_part = val - (long double)int_part;
   char tmp[256] = {0};
-  int tmp_len = 0;
-  int start_int_idx = tmp_len;
-  if (int_part == 0) tmp[tmp_len++] = '0';
-  while (int_part > 0) {
-    tmp[tmp_len++] = (int_part % 10) + '0';
-    int_part /= 10;
-  }
-  int start = start_int_idx;
-  int end = tmp_len - 1;
-  while (start < end) {
-    char temp_char = tmp[start];
-    tmp[start] = tmp[end];
-    tmp[end] = temp_char;
-    start++;
-    end--;
-  }
-  if (prec > 0 || token.hash) tmp[tmp_len++] = '.';
-  for (int i = 0; i < prec; i++) {
-    frac_part *= 10.0;
-    int digit = (int)frac_part;
-    tmp[tmp_len++] = digit + '0';
-    frac_part -= (long double)digit;
-  }
-  if (is_g && !token.hash && tmp_len > 0) {
-    int has_dot = 0;
-    for (int i = 0; i < tmp_len; i++) {
-      if (tmp[i] == '.') has_dot = 1;
-    }
-    if (has_dot) {
-      while (tmp_len > 0 && tmp[tmp_len - 1] == '0') {
-        tmp[tmp_len - 1] = '\0';
-        tmp_len--;
-      }
-      if (tmp_len > 0 && tmp[tmp_len - 1] == '.') {
-        tmp[tmp_len - 1] = '\0';
-        tmp_len--;
-      }
-    }
-  }
+  s21_assemble_mantissa(tmp, &tmp_len, val, prec, is_g, token);
   tmp[tmp_len++] = token.specifier;
   tmp[tmp_len++] = (exp >= 0) ? '+' : '-';
   int abs_exp = (exp < 0) ? -exp : exp;
   tmp[tmp_len++] = (abs_exp / 10) + '0';
   tmp[tmp_len++] = (abs_exp % 10) + '0';
-  char sign = 0;
-  if (negative)
-    sign = '-';
-  else if (token.plus)
-    sign = '+';
-  else if (token.space)
-    sign = ' ';
-  int total_len = tmp_len + (sign != 0 ? 1 : 0);
-  int padding = (token.width > total_len) ? (token.width - total_len) : 0;
-  char pad_char = ' ';
-  if (token.zero && !token.minus) pad_char = '0';
-  if (token.minus) {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
+  char sign = (negative) ? '-' : (token.plus) ? '+' : (token.space) ? ' ' : 0;
+  return s21_apply_width(str, tmp, tmp_len, sign, token, current_len);
+}
+
+int s21_get_exp(long double val) {
+  int exp = 0;
+  if (val > 0.0) {
+    while (val >= 10.0) {
+      val /= 10.0;
+      exp++;
     }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-  } else if (pad_char == '0') {
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = '0';
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
-    }
-  } else {
-    for (int i = 0; i < padding; i++) {
-      str[current_len + written] = ' ';
-      written++;
-    }
-    if (sign != 0) {
-      str[current_len + written] = sign;
-      written++;
-    }
-    for (int i = 0; i < tmp_len; i++) {
-      str[current_len + written] = tmp[i];
-      written++;
+    while (val < 1.0) {
+      val *= 10.0;
+      exp--;
     }
   }
-  return written;
+  return exp;
 }
 
 int s21_parse_g(char* str, s21_sprintf_token token, va_list* args,
@@ -823,18 +449,7 @@ int s21_parse_g(char* str, s21_sprintf_token token, va_list* args,
   if (val < 0) val = -val;
   int prec = (token.has_precision) ? token.precision : 6;
   if (prec == 0) prec = 1;
-  int temp_exp = 0;
-  if (val > 0.0) {
-    long double check_val = val;
-    while (check_val >= 10.0) {
-      check_val /= 10.0;
-      temp_exp++;
-    }
-    while (check_val < 1.0) {
-      check_val *= 10.0;
-      temp_exp--;
-    }
-  }
+  int temp_exp = s21_get_exp(val);
   int round_prec = prec - (temp_exp + 1);
   if (val > 0.0) {
     long double round_offset = 0.5;
@@ -845,18 +460,7 @@ int s21_parse_g(char* str, s21_sprintf_token token, va_list* args,
     }
     val += round_offset;
   }
-  int exp = 0;
-  if (val > 0.0) {
-    long double check_val = val;
-    while (check_val >= 10.0) {
-      check_val /= 10.0;
-      exp++;
-    }
-    while (check_val < 1.0) {
-      check_val *= 10.0;
-      exp--;
-    }
-  }
+  int exp = s21_get_exp(val);
   if (exp < -4 || exp >= prec) {
     token.specifier = (token.specifier == 'G') ? 'E' : 'e';
     token.precision = prec - 1;
