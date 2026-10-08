@@ -26,5 +26,7 @@ Suite *test_suite_strstr();
 Suite *test_suite_to_lower();
 Suite *test_suite_to_upper();
 Suite *test_suite_insert();
+Suite *test_suite_sprintf();
+Suite *test_suite_sscanf();
 
 #endif

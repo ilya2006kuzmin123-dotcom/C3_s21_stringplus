@@ -23,6 +23,8 @@ int main() {
   srunner_add_suite(sr, test_suite_strstr());
   srunner_add_suite(sr, test_suite_trim());
   srunner_add_suite(sr, test_suite_insert());
+  srunner_add_suite(sr, test_suite_sprintf());
+  srunner_add_suite(sr, test_suite_sscanf());
 
   srunner_run_all(sr, CK_NORMAL);
 
