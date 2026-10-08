@@ -39,7 +39,7 @@ tests/%.o: tests/%.c
 rebuild: clean $(LIB_NAME) test
 
 check_style:
-	clang-format -n --style="Google" code/*.c tests/*.c *.h
+	clang-format -n --style="Google" code/*.c code/*.h tests/*.c *.h
 
 fix_style:
 	clang-format -i --style="Google" code/*.c code/*.h tests/*.c *.h
