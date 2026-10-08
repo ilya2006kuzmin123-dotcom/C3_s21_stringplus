@@ -1,6 +1,8 @@
+#include <ctype.h>
+
 #include "../s21_string.h"
 
-int sscanf(const char* str, const char* format, ...) {
+int s21_sscanf(const char* str, const char* format, ...) {
   va_list args;
   va_start(args, format);
 

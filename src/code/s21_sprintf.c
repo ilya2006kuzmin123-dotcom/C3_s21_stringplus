@@ -232,7 +232,7 @@ int s21_parse_unsigned(char* str, s21_sprintf_token token, va_list* args,
 
 int s21_parse_float(char* str, s21_sprintf_token token, va_list* args,
                     int current_len, int is_g) {
-  int written = 0, tmp_len = 0;
+  int tmp_len = 0;
   long double val = (token.length == 'L') ? va_arg(*args, long double)
                                           : va_arg(*args, double);
   int prec = (token.has_precision) ? token.precision : 6;

@@ -9,7 +9,7 @@ START_TEST(sprintf_basic) {
   const char* str = "21School";
 
   int res1 = sprintf(buf1, "Char: %c, Percent: %%, String: %s", c, str);
-  int res2 = my_sprintf(buf2, "Char: %c, Percent: %%, String: %s", c, str);
+  int res2 = s21_sprintf(buf2, "Char: %c, Percent: %%, String: %s", c, str);
 
   ck_assert_int_eq(res1, res2);
 
@@ -28,7 +28,7 @@ START_TEST(sprintf_limits) {
   unsigned int max_uint = UINT_MAX;
 
   int res1 = sprintf(buf1, "Min: %d, MaxU: %u", min_int, max_uint);
-  int res2 = my_sprintf(buf2, "Min: %d, MaxU: %u", min_int, max_uint);
+  int res2 = s21_sprintf(buf2, "Min: %d, MaxU: %u", min_int, max_uint);
 
   ck_assert_int_eq(res1, res2);
 
@@ -47,7 +47,7 @@ START_TEST(sprintf_floats) {
   double f2 = -987.654321;
 
   int res1 = sprintf(buf1, "Float1: %f, Float2: %f", f1, f2);
-  int res2 = my_sprintf(buf2, "Float1: %f, Float2: %f", f1, f2);
+  int res2 = s21_sprintf(buf2, "Float1: %f, Float2: %f", f1, f2);
 
   ck_assert_int_eq(res1, res2);
 
@@ -59,7 +59,7 @@ START_TEST(sprintf_floats) {
 }
 END_TEST
 
-Suite* sprintf_suite(void) {
+Suite* test_suite_sprintf(void) {
   Suite* s = suite_create("sprintf_test_suite");
   TCase* tc = tcase_create("core");
 

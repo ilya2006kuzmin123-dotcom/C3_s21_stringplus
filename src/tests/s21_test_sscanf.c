@@ -10,7 +10,7 @@ START_TEST(sscanf_basic) {
   float f1 = 0.0f, f2 = 0.0f;
 
   int res1 = sscanf(src, "%d %c %s %f", &d1, &c1, s1, &f1);
-  int res2 = my_sscanf(src, "%d %c %s %f", &d2, &c2, s2, &f2);
+  int res2 = s21_sscanf(src, "%d %c %s %f", &d2, &c2, s2, &f2);
 
   ck_assert_int_eq(res1, res2);
   ck_assert_int_eq(d1, d2);
@@ -34,7 +34,7 @@ START_TEST(sscanf_limits_and_widths) {
   int w1 = 0, w2 = 0;
 
   int res1 = sscanf(src, "%d %ld %2d", &d1, &l1, &w1);
-  int res2 = my_sscanf(src, "%d %ld %2d", &d2, &l2, &w2);
+  int res2 = s21_sscanf(src, "%d %ld %2d", &d2, &l2, &w2);
 
   ck_assert_int_eq(res1, res2);
   ck_assert_int_eq(d1, d2);
@@ -49,7 +49,7 @@ START_TEST(sscanf_specials) {
   int n1 = 0, n2 = 0;
 
   int res1 = sscanf(src, "%*s %d%n", &d1, &n1);
-  int res2 = my_sscanf(src, "%*s %d%n", &d2, &n2);
+  int res2 = s21_sscanf(src, "%*s %d%n", &d2, &n2);
 
   ck_assert_int_eq(res1, res2);
   ck_assert_int_eq(d1, d2);
@@ -57,7 +57,7 @@ START_TEST(sscanf_specials) {
 }
 END_TEST
 
-Suite* sscanf_suite(void) {
+Suite* test_suite_sscanf(void) {
   Suite* s = suite_create("sscanf_test_suite");
   TCase* tc = tcase_create("core");
 
